@@ -48,9 +48,9 @@ class Media {
   Digest? _hash;
 
   /// will be used for finding duplicates/albums
-  /// WARNING: Returns same value for files > [maxFileSize]
+  /// WARNING: 對大於 [maxFileSize] 的檔案，僅對前 1 MiB (1,048,576 位元組) 與檔案大小做部分 SHA256 計算，實際 hash 取決於樣本與大小
   Digest get hash => _hash ??= firstFile.lengthSync() > maxFileSize
-      ? Digest([0])
+      ? hashPartialSync(firstFile)
       : sha256.convert(firstFile.readAsBytesSync());
 
   Media(

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:collection/collection.dart';
@@ -80,18 +81,24 @@ Future<int?> _dfLinux(String path) async {
 }
 
 Future<int?> _dfWindoza(String path) async {
+  // 使用 wmic 取得指定磁碟的 FreeSpace 值
+  final drive = p.rootPrefix(p.absolute(path)).replaceAll('\\', '');
   final res = await Process.run('wmic', [
-    'LogicalDisk',
-    'Where',
-    'DeviceID="${p.rootPrefix(p.absolute(path)).replaceAll('\\', '')}"',
-    'Get',
-    'FreeSpace'
+    'logicaldisk',
+    'where',
+    "DeviceID='${drive}'",
+    'get',
+    'FreeSpace',
+    '/value',
   ]);
-  return res.exitCode != 0
-      ? null
-      : int.tryParse(
-          res.stdout.toString().split('\n').elementAtOrNull(1) ?? '',
-        );
+  if (res.exitCode != 0) return null;
+  // stdout 例如 "FreeSpace=123456789"
+  final line = res.stdout
+      .toString()
+      .split('\n')
+      .firstWhere((l) => l.startsWith('FreeSpace='), orElse: () => '');
+  final val = line.split('=') .elementAtOrNull(1) ?? '';
+  return int.tryParse(val.trim());
 }
 
 Future<int?> _dfMcOS(String path) async {
@@ -132,4 +139,20 @@ extension Z on String {
     if (lastIndex == -1) return this;
     return replaceRange(lastIndex, lastIndex + from.length, to);
   }
+}
+
+/// 同步讀取檔案前 N 個位元組
+List<int> readFirstNBytesSync(File file, int count) {
+  final raf = file.openSync();
+  final bytes = raf.readSync(count);
+  raf.closeSync();
+  return bytes;
+}
+
+/// 混合檔案大小與前 N 位元組進行 SHA256，區分大檔案
+Digest hashPartialSync(File file) {
+  const sampleSize = 1024 * 1024; // 1 MiB
+  final firstBytes = readFirstNBytesSync(file, sampleSize);
+  final sizeSeed = utf8.encode(file.lengthSync().toString());
+  return sha256.convert([...sizeSeed, ...firstBytes]);
 }

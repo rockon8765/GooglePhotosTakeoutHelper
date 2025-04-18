@@ -46,13 +46,9 @@ extension Group on Iterable<Media> {
 int removeDuplicates(List<Media> media) {
   var count = 0;
   final byAlbum = media
-      // group by albums as we will merge those later
-      // (to *not* compare hashes between albums)
       .groupListsBy((e) => e.files.keys.first)
       .values
-      // group by hash
       .map((albumGroup) => albumGroup.groupIdentical().values);
-  // we don't care about album organization now - flatten
   final Iterable<List<Media>> hashGroups = byAlbum.flattened;
   for (final group in hashGroups) {
     // sort by best date extraction, then file name length
@@ -61,10 +57,11 @@ int removeDuplicates(List<Media> media) {
 
     // note: we are comparing accuracy here tho we do know that *all*
     // of them have it null - i'm leaving this just for sake
-    group.sort((a, b) =>
-        '${a.dateTakenAccuracy ?? 999}${p.basename(a.firstFile.path).length}'
-            .compareTo(
-                '${b.dateTakenAccuracy ?? 999}${p.basename(b.firstFile.path).length}'));
+    group.sort((a, b) {
+      final diff = (a.dateTakenAccuracy ?? 999) - (b.dateTakenAccuracy ?? 999);
+      if (diff != 0) return diff;
+      return p.basename(a.firstFile.path).length - p.basename(b.firstFile.path).length;
+    });
     // get list of all except first
     for (final e in group.sublist(1)) {
       // remove them from media
@@ -81,24 +78,28 @@ String albumName(Directory albumDir) => p.basename(albumDir.path);
 /// This will analyze [allMedia], find which files are hash-same, and merge
 /// all of them into single [Media] object with all album names they had
 void findAlbums(List<Media> allMedia) {
+  // 先收集要移除與新增的 media
+  final toRemove = <Media>[];
+  final toAdd = <Media>[];
   for (final group in allMedia.groupIdentical().values) {
-    if (group.length <= 1) continue; // then this isn't a group
-    // now, we have [group] list that contains actual sauce:
-
-    final allFiles = group.fold(
+    if (group.length <= 1) continue;
+    // 合併所有檔案路徑
+    final mergedFiles = group.fold<Map<String?, File>>(
       <String?, File>{},
-      (allFiles, e) => allFiles..addAll(e.files),
+      (map, m) => map..addAll(m.files),
     );
-    // sort by best date extraction
-    group.sort((a, b) =>
-        (a.dateTakenAccuracy ?? 999).compareTo((b.dateTakenAccuracy ?? 999)));
-    // remove original dirty ones
-    for (final e in group) {
-      allMedia.remove(e);
-    }
-    // set the first (best) one complete album list
-    group.first.files = allFiles;
-    // add our one, precious ✨perfect✨ one
-    allMedia.add(group.first);
+    // 依準確度與檔名長度排序，選最好的代表
+    group.sort((a, b) {
+      final diff = (a.dateTakenAccuracy ?? 999) - (b.dateTakenAccuracy ?? 999);
+      if (diff != 0) return diff;
+      return p.basename(a.firstFile.path).length - p.basename(b.firstFile.path).length;
+    });
+    final best = group.first;
+    best.files = mergedFiles;
+    toRemove.addAll(group);
+    toAdd.add(best);
   }
+  // 一次性更新列表，避免迴圈內 mutate
+  allMedia.removeWhere((m) => toRemove.contains(m));
+  allMedia.addAll(toAdd);
 }

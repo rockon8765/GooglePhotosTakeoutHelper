@@ -45,6 +45,28 @@ final _commonDatetimePatterns = [
   ],
 ];
 
+/// 簡易固定模式日期解析
+class FixedDateTimeFormatter {
+  final bool isUtc;
+  FixedDateTimeFormatter(String pattern, {this.isUtc = false});
+  /// 只取字串中第一組 14 位連續數字來解析 YYYYMMDDhhmmss
+  DateTime? tryDecode(String input) {
+    final digits = input.replaceAll(RegExp(r'\D'), '');
+    if (digits.length < 14) return null;
+    try {
+      final year = int.parse(digits.substring(0, 4));
+      final month = int.parse(digits.substring(4, 6));
+      final day = int.parse(digits.substring(6, 8));
+      final hour = int.parse(digits.substring(8, 10));
+      final minute = int.parse(digits.substring(10, 12));
+      final second = int.parse(digits.substring(12, 14));
+      return DateTime(year, month, day, hour, minute, second);
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
 /// Guesses DateTime from [file]s name
 /// - for example Screenshot_20190919-053857.jpg - we can guess this 😎
 Future<DateTime?> guessExtractor(File file) async {

@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:args/args.dart';
 import 'package:console_bars/console_bars.dart';
 import 'package:gpth/date_extractor.dart';
@@ -11,6 +9,18 @@ import 'package:gpth/media.dart';
 import 'package:gpth/moving.dart';
 import 'package:gpth/utils.dart';
 import 'package:path/path.dart' as p;
+import 'dart:io' as io;
+
+String _normPath(String path) {
+  final normalized = p.normalize(path);
+  return io.Platform.isWindows ? normalized.toLowerCase() : normalized;
+}
+
+bool _isUnderInput(String path, String input) {
+  final np = _normPath(path);
+  final ni = _normPath(input);
+  return np.startsWith(ni);
+}
 
 const helpText = """GooglePhotosTakeoutHelper v$version - The Dart successor
 
@@ -61,7 +71,12 @@ void main(List<String> arguments) async {
       help: "Copy files instead of moving them.\n"
           "This is usually slower, and uses extra space, "
           "but doesn't break your input folder",
-    );
+    )
+    ..addOption('date-order',
+      defaultsTo: 'json,exif,guess',
+      help: '設定擷取 date 的順序，逗號分隔，選項: json,exif,guess')
+  ;
+
   final args = <String, dynamic>{};
   try {
     final res = parser.parse(arguments);
@@ -126,18 +141,6 @@ void main(List<String> arguments) async {
     // print('');
   }
 
-  // elastic list of extractors - can add/remove with cli flags
-  // those are in order of reliability -
-  // if one fails, only then later ones will be used
-  final dateExtractors = <DateTimeExtractor>[
-    jsonExtractor,
-    exifExtractor,
-    if (args['guess-from-name']) guessExtractor,
-    // this is potentially *dangerous* - see:
-    // https://github.com/TheLastGimbus/GooglePhotosTakeoutHelper/issues/175
-    (f) => jsonExtractor(f, tryhard: true),
-  ];
-
   /// ##### Occasional Fix mode #####
 
   if (args['fix'] != null) {
@@ -190,18 +193,11 @@ void main(List<String> arguments) async {
   }
   // all of this logic is to prevent user easily blowing output folder
   // by running command two times
-  if (await output.exists() &&
-      !await output
-          .list()
-          // allow input folder to be inside output
-          .where((e) => p.absolute(e.path) != p.absolute(args['input']))
-          .isEmpty) {
-    if (await interactive.askForCleanOutput()) {
-      await for (final file in output
-          .list()
-          // delete everything except input folder if there
-          .where((e) => p.absolute(e.path) != p.absolute(args['input']))) {
-        await file.delete(recursive: true);
+  if (await output.exists()) {
+    // 遞歸清理除根目錄與輸入路徑
+    await for (var ent in output.list(recursive: true)) {
+      if (ent.path != output.path && !_isUnderInput(ent.path, args['input'])) {
+        await ent.delete(recursive: true);
       }
     }
   }
@@ -256,11 +252,11 @@ void main(List<String> arguments) async {
 
   print('Okay, running... searching for everything in input folder...');
 
-  // recursive=true makes it find everything nicely even if user id dumb 😋
-  await for (final d in input.list(recursive: true).whereType<Directory>()) {
+  // 只遍歷輸入資料夾第一層子目錄
+  await for (final d in input.list(recursive: false).whereType<Directory>()) {
     if (isYearFolder(d)) {
       yearFolders.add(d);
-    } else if (await isAlbumFolder(d)) {
+    } else {
       albumFolders.add(d);
     }
   }
@@ -364,13 +360,20 @@ void main(List<String> arguments) async {
     desc: "${args['copy'] ? 'Copying' : 'Moving'} photos to output folder",
     width: barWidth,
   );
-  await moveFiles(
-    media,
-    output,
-    copy: args['copy'],
-    divideToDates: args['divide-to-dates'],
-    albumBehavior: args['albums'],
-  ).listen((_) => barCopy.increment()).asFuture();
+  try {
+    await moveFiles(
+      media,
+      output,
+      copy: args['copy'],
+      divideToDates: args['divide-to-dates'],
+      albumBehavior: args['albums'],
+    ).listen((_) => barCopy.increment()).asFuture();
+  } catch (e) {
+    error('搬移過程錯誤：$e');
+    quit(1);
+  } finally {
+    barCopy.close();
+  }
   print('');
 
   // @Deprecated('Interactive unzipping is suspended for now!')

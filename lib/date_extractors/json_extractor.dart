@@ -13,18 +13,50 @@ Future<DateTime?> jsonExtractor(File file, {bool tryhard = false}) async {
   if (jsonFile == null) return null;
   try {
     final data = jsonDecode(await jsonFile.readAsString());
-    final epoch = int.parse(data['photoTakenTime']['timestamp'].toString());
+    
+    // 檢查必要的 JSON 結構是否存在
+    if (data == null) return null;
+    
+    final photoTakenTime = data['photoTakenTime'];
+    if (photoTakenTime == null) return null;
+    
+    final timestamp = photoTakenTime['timestamp'];
+    if (timestamp == null) return null;
+    
+    // 安全地解析時間戳
+    int? epoch;
+    if (timestamp is int) {
+      epoch = timestamp;
+    } else if (timestamp is String) {
+      epoch = int.tryParse(timestamp);
+    } else {
+      epoch = int.tryParse(timestamp.toString());
+    }
+    
+    if (epoch == null) return null;
+    
+    // 檢查時間戳範圍
+    if (epoch < 0 || epoch > 4102444800) { // 1970 到 2100 年左右
+      print('檔案 ${jsonFile.path} 的時間戳超出合理範圍: $epoch');
+      return null;
+    }
+    
     return DateTime.fromMillisecondsSinceEpoch(epoch * 1000);
-  } on FormatException catch (_) {
-    // this is when json is bad
+  } on FormatException catch (e) {
+    // 提供更詳細的錯誤記錄
+    print('JSON 格式錯誤: ${jsonFile.path} - $e');
     return null;
-  } on FileSystemException catch (_) {
-    // this happens for issue #143
-    // "Failed to decode data using encoding 'utf-8'"
-    // maybe this will self-fix when dart itself support more encodings
+  } on FileSystemException catch (e) {
+    // 文件編碼問題
+    print('讀取 JSON 檔案失敗: ${jsonFile.path} - ${e.message}');
     return null;
-  } on NoSuchMethodError catch (_) {
-    // this is when tags like photoTakenTime aren't there
+  } on NoSuchMethodError catch (e) {
+    // 缺少必要的 JSON 欄位
+    print('JSON 結構不完整: ${jsonFile.path} - $e');
+    return null;
+  } catch (e) {
+    // 捕捉所有其他可能的錯誤
+    print('處理 JSON 時發生未預期錯誤: ${jsonFile.path} - $e');
     return null;
   }
 }
@@ -62,8 +94,13 @@ Future<File?> _jsonForFile(File file, {required bool tryhard}) async {
 String _noExtension(String filename) =>
     p.basenameWithoutExtension(File(filename).path);
 
-String _removeDigit(String filename) =>
-    filename.replaceAll(RegExp(r'\(\d\)\.'), '.');
+String _removeDigit(String filename) {
+  // 只在檔名末尾符合 '(digits).extension' 時移除括號編號
+  if (RegExp(r'\(\d+\)\.\w+$').hasMatch(filename)) {
+    return filename.replaceAll(RegExp(r'\(\d+\)\.'), '.');
+  }
+  return filename;
+}
 
 /// This removes only strings defined in [extraFormats] list from `extras.dart`,
 /// so it's pretty safe
