@@ -1,3 +1,4 @@
+import 'dart:io';  // 新增 dart:io 匯入以解決 stdin, Directory, exit 等問題
 import 'package:args/args.dart';
 import 'package:console_bars/console_bars.dart';
 import 'package:gpth/date_extractor.dart';
@@ -9,11 +10,10 @@ import 'package:gpth/media.dart';
 import 'package:gpth/moving.dart';
 import 'package:gpth/utils.dart';
 import 'package:path/path.dart' as p;
-import 'dart:io' as io;
 
 String _normPath(String path) {
   final normalized = p.normalize(path);
-  return io.Platform.isWindows ? normalized.toLowerCase() : normalized;
+  return Platform.isWindows ? normalized.toLowerCase() : normalized;
 }
 
 bool _isUnderInput(String path, String input) {
@@ -41,7 +41,7 @@ void main(List<String> arguments) async {
     ..addOption(
       'fix',
       help: 'Folder with any photos to fix dates. '
-          'This skips whole "GoogleTakeout" procedure.'
+          'This skips whole "GoogleTakeout" procedure.' 
           'It is here because gpth has some cool heuristics to determine date '
           'of a photo, and this can be handy in many situations :)',
     )
@@ -261,12 +261,12 @@ void main(List<String> arguments) async {
     }
   }
   for (final f in yearFolders) {
-    await for (final file in f.list().wherePhotoVideo()) {
+    await for (final file in f.list(recursive: true).wherePhotoVideo()) {
       media.add(Media({null: file}));
     }
   }
   for (final a in albumFolders) {
-    await for (final file in a.list().wherePhotoVideo()) {
+    await for (final file in a.list(recursive: true).wherePhotoVideo()) {
       media.add(Media({albumName(a): file}));
     }
   }
@@ -367,12 +367,12 @@ void main(List<String> arguments) async {
       copy: args['copy'],
       divideToDates: args['divide-to-dates'],
       albumBehavior: args['albums'],
-    ).listen((_) => barCopy.increment()).asFuture();
-  } catch (e) {
+    ).listen((_) => barCopy.increment()).asFuture();  } catch (e) {
     error('搬移過程錯誤：$e');
     quit(1);
   } finally {
-    barCopy.close();
+    // 修正為使用 FillingBar API：直接更新到最大值以結束進度條
+    barCopy.update(barCopy.total);
   }
   print('');
 

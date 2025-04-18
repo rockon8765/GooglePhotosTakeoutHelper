@@ -2,6 +2,7 @@
 /// Whether it's a legendary "year folder", album, trash, etc
 import 'dart:io';
 
+import 'package:gpth/utils.dart';  // 引入包含 Stream 擴充方法的模組
 import 'package:path/path.dart' as p;
 
 bool isYearFolder(Directory dir) =>

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:collection/collection.dart';
+import 'package:crypto/crypto.dart';
 import 'package:gpth/interactive.dart' as interactive;
 import 'package:mime/mime.dart';
 import 'package:path/path.dart' as p;
